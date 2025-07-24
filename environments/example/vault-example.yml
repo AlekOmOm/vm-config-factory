@@ -1,0 +1,10 @@
+# Example vault file - encrypt with: ansible-vault encrypt vault-example.yml
+# DO NOT use these passwords in production!
+
+vault:
+  grafana:
+    admin_password: "change_me_secure_grafana_admin_password"
+  postgres:
+    admin_password: "change_me_secure_postgres_admin_password"
+    grafana_user: "grafana_app_user"
+    grafana_password: "change_me_secure_grafana_db_password"

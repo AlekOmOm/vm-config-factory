@@ -1,0 +1,42 @@
+template: grafana-postgres
+metadata:
+  description: "Grafana monitoring platform with PostgreSQL database on separate VMs - example environment"
+  owner: "platform-team"
+  environment: "example"
+
+vms:
+  grafana:
+    host: "10.0.1.10"  # Replace with actual Grafana VM IP
+    ansible_user: ubuntu
+    vars:
+      grafana_port: 3000
+      grafana_admin_user: admin
+      grafana_admin_password: "{{vault.grafana.admin_password}}"
+      grafana_database_host: "{{vms.postgres.host}}"
+      grafana_database_name: grafana
+      grafana_database_user: "{{vault.postgres.grafana_user}}"
+      grafana_database_password: "{{vault.postgres.grafana_password}}"
+      grafana_domain: "grafana.example.com"
+      
+  postgres:
+    host: "10.0.1.11"  # Replace with actual PostgreSQL VM IP
+    ansible_user: ubuntu
+    vars:
+      postgres_port: 5432
+      postgres_password: "{{vault.postgres.admin_password}}"
+      postgres_default_db: postgres
+      postgres_databases:
+        - grafana
+      postgres_users:
+        - name: "{{vault.postgres.grafana_user}}"
+          password: "{{vault.postgres.grafana_password}}"
+          db: grafana
+
+secrets:
+  vault_file: "vault-example.yml"
+  description: "Ansible vault file containing sensitive variables"
+
+validation:
+  connectivity_checks: true
+  port_availability: [3000, 5432, 80, 443]
+  ssl_cert_expiry: 30
