@@ -1,5 +1,7 @@
 """Template and layer registry initialization"""
-from vmconfig.framework.templates import TemplateRegistry
+import importlib.util
+import inspect
+from vmconfig.framework.templates import TemplateRegistry, ServiceTemplate
 from vmconfig.framework.layers import LayerRegistry
 
 # Import built-in layers - using relative imports within package
@@ -16,15 +18,8 @@ try:
     from docker import DockerLayer  
     from networking import NetworkingLayer
     from application import GrafanaLayer, PostgreSQLLayer
-    
-    # Add templates directory to path
-    templates_dir = Path(__file__).parent.parent.parent / "templates"
-    if str(templates_dir) not in sys.path:
-        sys.path.insert(0, str(templates_dir))
-    
-    # Import templates
-    sys.path.insert(0, str(templates_dir / "grafana-postgres"))
-    from template import GrafanaPostgresTemplate
+    from prometheus import PrometheusLayer
+
     
 except ImportError as e:
     print(f"Warning: Could not import all components: {e}")
@@ -39,8 +34,46 @@ except ImportError as e:
         name = "grafana"
     class PostgreSQLLayer:
         name = "postgresql"
-    class GrafanaPostgresTemplate:
-        name = "grafana-postgres"
+    class PrometheusLayer:
+        name = "prometheus"
+
+
+def discover_and_register_templates():
+    """Autodiscover and register templates from templates/ directory"""
+    try:
+        templates_dir = Path(__file__).parent.parent.parent / "templates"
+        
+        if not templates_dir.exists():
+            return
+            
+        for template_dir in templates_dir.iterdir():
+            if not template_dir.is_dir() or template_dir.name.startswith('__'):
+                continue
+                
+            template_file = template_dir / "template.py"
+            if not template_file.exists():
+                continue
+                
+            try:
+                # Import the template module
+                spec = importlib.util.spec_from_file_location(
+                    f"template_{template_dir.name}", template_file
+                )
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                
+                # Find ServiceTemplate classes in the module
+                for name, obj in inspect.getmembers(module, inspect.isclass):
+                    if (issubclass(obj, ServiceTemplate) and 
+                        obj != ServiceTemplate and 
+                        hasattr(obj, 'name')):
+                        TemplateRegistry.register(obj)
+                        
+            except Exception as e:
+                print(f"Warning: Could not import template from {template_dir.name}: {e}")
+                
+    except Exception as e:
+        print(f"Warning: Template discovery failed: {e}")
 
 def initialize_registry():
     """Initialize template and layer registries with built-in components"""
@@ -51,9 +84,11 @@ def initialize_registry():
     LayerRegistry.register(NetworkingLayer)
     LayerRegistry.register(GrafanaLayer)
     LayerRegistry.register(PostgreSQLLayer)
+    LayerRegistry.register(PrometheusLayer)
     
-    # Register built-in templates
-    TemplateRegistry.register(GrafanaPostgresTemplate)
+    # Discover and register templates
+    discover_and_register_templates()
+
 
 # Initialize on import
 try:

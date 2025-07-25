@@ -1,0 +1,25 @@
+metadata:
+  description: Single-VM Prometheus stack - dev environment
+  environment: dev
+  owner: platform-team
+secrets:
+  description: Ansible vault file containing sensitive variables
+  vault_file: vault-dev.yml
+template: prometheus
+validation:
+  connectivity_checks: true
+  port_availability:
+  - 9090
+  - 80
+  - 443
+  ssl_cert_expiry: 30
+vms:
+  prometheus:
+    ansible_user: ubuntu
+    host: 10.0.1.10
+    vars:
+      nginx_ssl_email: admin@example.com
+      nginx_use_ssl: true
+      prometheus_domain: localhost
+      prometheus_port: 9090
+      prometheus_root: /opt/prometheus

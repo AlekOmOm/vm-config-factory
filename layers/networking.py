@@ -9,8 +9,28 @@ class NetworkingLayer(ConfigLayer):
     description = "Nginx reverse proxy, SSL certificates, and network security"
     dependencies = ["base-os"]
     
+    def _detect_service(self, vm_config: Dict[str, Any]) -> str:
+        """Detect which service this networking layer is configuring"""
+        # Look inside the vars dict where the actual variables are
+        vars_dict = vm_config.get('vars', {})
+        print(f"DEBUG: vars keys: {list(vars_dict.keys())}")
+        
+        if 'prometheus_domain' in vars_dict or 'prometheus_port' in vars_dict:
+            print("DEBUG: Detected prometheus service")
+            return 'prometheus'
+        elif 'grafana_domain' in vars_dict or 'grafana_port' in vars_dict:
+            print("DEBUG: Detected grafana service") 
+            return 'grafana'
+        else:
+            # Default fallback
+            print("DEBUG: Using default grafana fallback")
+            return 'grafana'
+    
     def generate_ansible_tasks(self, vm_config: Dict[str, Any]) -> List[AnsibleTask]:
         """Generate networking configuration tasks"""
+        service_name = self._detect_service(vm_config)
+        service_domain = vm_config.get(f'{service_name}_domain', 'localhost')
+        
         tasks = [
             AnsibleTask(
                 name="Install Nginx",
@@ -48,21 +68,21 @@ class NetworkingLayer(ConfigLayer):
                 }
             ),
             AnsibleTask(
-                name="Deploy Grafana nginx site configuration",
+                name=f"Deploy {service_name} nginx site configuration",
                 module="template",
                 params={
-                    "src": "../../templates/grafana-nginx.conf.j2",
-                    "dest": "/etc/nginx/sites-available/grafana",
+                    "src": f"../../templates/{service_name}-nginx.conf.j2",
+                    "dest": f"/etc/nginx/sites-available/{service_name}",
                     "mode": "0644"
                 },
                 notify="reload nginx"
             ),
             AnsibleTask(
-                name="Enable Grafana nginx site",
+                name=f"Enable {service_name} nginx site",
                 module="file",
                 params={
-                    "src": "/etc/nginx/sites-available/grafana",
-                    "dest": "/etc/nginx/sites-enabled/grafana",
+                    "src": f"/etc/nginx/sites-available/{service_name}",
+                    "dest": f"/etc/nginx/sites-enabled/{service_name}",
                     "state": "link"
                 },
                 notify="reload nginx"
@@ -153,7 +173,7 @@ add_header X-XSS-Protection "1; mode=block" always;
                 name="Check if SSL certificate acquisition is needed",
                 module="set_fact",
                 params={
-                    "need_ssl_cert": "{{ nginx_use_ssl | default(false) and 'amazonaws.com' not in (grafana_domain | default('')) }}"
+                    "need_ssl_cert": f"{{{{ nginx_use_ssl | default(false) and 'amazonaws.com' not in ({service_name}_domain | default('')) }}}}"
                 }
             ),
             AnsibleTask(
@@ -169,8 +189,8 @@ add_header X-XSS-Protection "1; mode=block" always;
                 name="Obtain SSL certificate with certbot",
                 module="command",
                 params={
-                    "cmd": "certbot certonly --standalone -d {{ grafana_domain }} --non-interactive --agree-tos --email {{ nginx_ssl_email | default('admin@' + grafana_domain) }}",
-                    "creates": "/etc/letsencrypt/live/{{ grafana_domain }}/fullchain.pem"
+                    "cmd": f"certbot certonly --standalone -d {{{{ {service_name}_domain }}}} --non-interactive --agree-tos --email {{{{ nginx_ssl_email | default('admin@' + {service_name}_domain) }}}}",
+                    "creates": f"/etc/letsencrypt/live/{{{{ {service_name}_domain }}}}/fullchain.pem"
                 },
                 when="need_ssl_cert"
             ),
