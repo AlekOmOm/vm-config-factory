@@ -87,7 +87,7 @@ def show_quick_actions():
     if not templates:
         console.print("No initialized templates found.")
         console.print("Run 'vm-config init <template>' to get started")
-        return False
+        return True
     
     console.print("Available environments:")
     
