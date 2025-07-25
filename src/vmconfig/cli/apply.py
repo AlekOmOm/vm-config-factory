@@ -6,6 +6,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from typing import Optional
 import logging
 import yaml
+from subprocess import run
 
 from vmconfig.framework.templates import TemplateRegistry
 from vmconfig.framework.validation import validate_environment_config
@@ -13,6 +14,44 @@ from vmconfig.framework.generators.ansible import AnsibleGenerator
 from .lib.tui import TUI
 
 console = Console()
+
+def resolve_ssh_aliases_in_config(config):
+    """Resolve SSH aliases to actual hostnames - imported from edit_config"""
+    def parse_ssh_config(ssh_alias: str) -> Optional[str]:
+        """Parse SSH config to get actual hostname for an alias"""
+        try:
+            result = run(['ssh', '-G', ssh_alias], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if line.strip().startswith('hostname '):
+                        return line.strip().split('hostname ')[1].strip()
+        except Exception:
+            pass
+        return None
+    
+    if 'vms' not in config:
+        return config
+    
+    for vm_name, vm_config in config['vms'].items():
+        if 'host' in vm_config:
+            ssh_alias = vm_config['host']
+            actual_hostname = parse_ssh_config(ssh_alias)
+            if actual_hostname and actual_hostname != ssh_alias:
+                console.print(f"[dim]Resolved SSH alias {ssh_alias} → {actual_hostname}[/dim]")
+                vm_config['actual_hostname'] = actual_hostname
+                
+                # Update variables that reference other VMs
+                if 'vars' in vm_config:
+                    for var_name, var_value in vm_config['vars'].items():
+                        if isinstance(var_value, str):
+                            for other_vm_name, other_vm_config in config['vms'].items():
+                                if other_vm_name != vm_name and 'host' in other_vm_config:
+                                    other_alias = other_vm_config['host']
+                                    other_actual = parse_ssh_config(other_alias)
+                                    if other_actual and other_alias in var_value:
+                                        vm_config['vars'][var_name] = var_value.replace(other_alias, other_actual)
+    
+    return config
 
 def setup_simple_logging(verbose=False):
     level = logging.DEBUG if verbose else logging.INFO
@@ -102,6 +141,9 @@ def apply_command(
         with config_file.open() as f:
             env_config = yaml.safe_load(f)
         
+        # Resolve SSH aliases to actual hostnames
+        env_config = resolve_ssh_aliases_in_config(env_config)
+        
         # Use explicit template if provided, otherwise fall back to config
         if template:
             template_name = template
@@ -174,7 +216,7 @@ def apply_command(
                             TUI.info_message("[dim]Tip: You can set the password in the config file or use the --vault-file-password option.[/dim]")
                             TUI.info_message("[dim] - fx. vm-config apply --vault-file-password 'my_password'[/dim]")
                             TUI.spacer()
-                            raise typer.Exit(1)
+                            # continue without vault password
                     result = ansible_gen.execute_playbook(
                         playbook_path=env_dir / "playbook.yml",
                         inventory_path=env_dir / "inventory.yml",

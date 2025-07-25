@@ -246,7 +246,7 @@ become_ask_pass = False
                         'name': 'Wait for services to be ready',
                         'wait_for': {
                             'port': '{{ item }}',
-                            'host': '{{ ansible_host }}',
+                            'host': '{{ ansible_host | default(inventory_hostname) }}',
                             'timeout': 60
                         },
                         'loop': '{{ service_ports | default([]) }}'
