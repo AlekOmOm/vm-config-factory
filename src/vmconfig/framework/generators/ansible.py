@@ -90,10 +90,16 @@ become_ask_pass = False
             }
             if vm_config.get('ssh_key_file'):
                 host_entry['ansible_ssh_private_key_file'] = vm_config['ssh_key_file']
-            if vm_config.get('ansible_host'):
+            
+            # Handle SSH alias resolution
+            inventory_hostname = vm_config.get('host', vm_name)
+            
+            # If we have an actual hostname resolved from SSH config, use it for ansible_host
+            if vm_config.get('actual_hostname'):
+                host_entry['ansible_host'] = vm_config['actual_hostname']
+            elif vm_config.get('ansible_host'):
                 host_entry['ansible_host'] = vm_config['ansible_host']
 
-            inventory_hostname = vm_config.get('host', vm_name)
             inventory['all']['hosts'][inventory_hostname] = host_entry
         
         content = yaml.dump(inventory, default_flow_style=False)
@@ -115,16 +121,46 @@ become_ask_pass = False
         adj = {vm: [] for vm in vm_names}
         in_degree = {vm: 0 for vm in vm_names}
 
+        # Create hostname to VM name mapping
+        hostname_to_vm = {}
+        for vm_name, vm_config in vms_config.items():
+            hostname = vm_config.get('host', vm_name)
+            hostname_to_vm[hostname] = vm_name
+
         for vm_name in vm_names:
-            # Search for dependencies in the vm's vars
-            vars_str = yaml.dump(vms_config[vm_name].get('vars', {}))
+            vm_vars = vms_config[vm_name].get('vars', {})
+            vars_str = yaml.dump(vm_vars)
+            
             for other_vm in vm_names:
                 if vm_name == other_vm:
                     continue
-                # If 'vms.other_vm' is found, then vm_name depends on other_vm
+                
+                # Check for template variable references like 'vms.other_vm'
                 if f"vms.{other_vm}" in vars_str:
                     adj[other_vm].append(vm_name)
                     in_degree[vm_name] += 1
+                    continue
+                
+                # Check for hostname references
+                other_hostname = vms_config[other_vm].get('host', other_vm)
+                if other_hostname in vars_str:
+                    # Additional validation: ensure it's actually a dependency, not just a coincidental match
+                    # Look for database, host, or service references
+                    dependency_indicators = [
+                        f"database_host: {other_hostname}",
+                        f"database_host: '{other_hostname}'", 
+                        f'database_host: "{other_hostname}"',
+                        f"host: {other_hostname}",
+                        f"host: '{other_hostname}'",
+                        f'host: "{other_hostname}"',
+                        f"server: {other_hostname}",
+                        f"server: '{other_hostname}'",
+                        f'server: "{other_hostname}"'
+                    ]
+                    
+                    if any(indicator in vars_str for indicator in dependency_indicators):
+                        adj[other_vm].append(vm_name)
+                        in_degree[vm_name] += 1
         
         # Topological sort (Kahn's algorithm)
         queue = [vm for vm in vm_names if in_degree[vm] == 0]

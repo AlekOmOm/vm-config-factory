@@ -51,7 +51,7 @@ class NetworkingLayer(ConfigLayer):
                 name="Deploy Grafana nginx site configuration",
                 module="template",
                 params={
-                    "src": "grafana-nginx.conf.j2",
+                    "src": "../../templates/grafana-nginx.conf.j2",
                     "dest": "/etc/nginx/sites-available/grafana",
                     "mode": "0644"
                 },

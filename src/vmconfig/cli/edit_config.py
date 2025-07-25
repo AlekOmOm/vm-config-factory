@@ -7,10 +7,58 @@ from rich.table import Table
 from rich.panel import Panel
 from typing import Optional, Dict, Any
 import yaml
+import re
+import os
+from subprocess import run, PIPE
 
 from .lib.tui import TUI
 
 console = Console()
+
+def parse_ssh_config(ssh_alias: str) -> Optional[str]:
+    """Parse SSH config to get actual hostname for an alias"""
+    try:
+        # Use ssh -G to get the resolved configuration for the alias
+        result = run(['ssh', '-G', ssh_alias], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if line.strip().startswith('hostname '):
+                    return line.strip().split('hostname ')[1].strip()
+    except Exception as e:
+        console.print(f"[dim]Could not resolve SSH config for {ssh_alias}: {e}[/dim]")
+    return None
+
+def resolve_ssh_aliases_in_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve SSH aliases to actual hostnames in VM configurations"""
+    if 'vms' not in config:
+        return config
+    
+    for vm_name, vm_config in config['vms'].items():
+        if 'host' in vm_config:
+            ssh_alias = vm_config['host']
+            # Try to resolve the SSH alias to actual hostname
+            actual_hostname = parse_ssh_config(ssh_alias)
+            if actual_hostname and actual_hostname != ssh_alias:
+                console.print(f"[dim]Resolved {ssh_alias} → {actual_hostname}[/dim]")
+                # Keep the SSH alias for Ansible connections but store the real hostname
+                vm_config['ansible_host_alias'] = ssh_alias  # Keep for reference
+                vm_config['actual_hostname'] = actual_hostname
+                
+                # Update any variables that reference other VMs to use actual hostnames
+                if 'vars' in vm_config:
+                    vars_config = vm_config['vars']
+                    for var_name, var_value in vars_config.items():
+                        if isinstance(var_value, str):
+                            # Look for references to other VM SSH aliases
+                            for other_vm_name, other_vm_config in config['vms'].items():
+                                if other_vm_name != vm_name and 'host' in other_vm_config:
+                                    other_alias = other_vm_config['host']
+                                    other_actual = parse_ssh_config(other_alias)
+                                    if other_actual and other_alias in var_value:
+                                        console.print(f"[dim]Updating {var_name}: {other_alias} → {other_actual}[/dim]")
+                                        vars_config[var_name] = var_value.replace(other_alias, other_actual)
+    
+    return config
 
 def edit_config_command(
     template: Optional[str] = typer.Option(None, "--template", "-t", help="Template name"),
@@ -51,6 +99,9 @@ def edit_config_command(
     # Load current config
     with config_path.open() as f:
         config = yaml.safe_load(f)
+    
+    # Resolve SSH aliases in config
+    config = resolve_ssh_aliases_in_config(config)
     
     # Interactive editing
     if not auto_prompt:

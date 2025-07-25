@@ -151,6 +151,10 @@ def apply_command(
                 progress_logger.update_task("Generated artifacts successfully", advance=1)
                 
                 use_vault = bool(vault_file)
+                vault_file_encrypted = False
+                vault_file_password = None
+                if vault_file:
+                    vault_file_encrypted = vault_file.endswith(".enc")
 
                 if dry_run:
                     progress_logger.update_task("DRY RUN - Showing planned execution", advance=2)
@@ -161,8 +165,16 @@ def apply_command(
                 else:
                     progress_logger.update_task("Executing Ansible playbook...", advance=1)
                     if use_vault:
-                        progress.stop()
-                        console.print("\n[bold yellow]Ansible Vault password required.[/bold yellow]")
+                        if vault_file_encrypted:
+                            vault_file_password = env_config["secrets"]["vault_file_password"]
+                        if not vault_file_password:
+                            progress.stop()
+                            TUI.error_message("\n[bold yellow]Ansible Vault password required.[/bold yellow]")
+                            TUI.spacer()
+                            TUI.info_message("[dim]Tip: You can set the password in the config file or use the --vault-file-password option.[/dim]")
+                            TUI.info_message("[dim] - fx. vm-config apply --vault-file-password 'my_password'[/dim]")
+                            TUI.spacer()
+                            raise typer.Exit(1)
                     result = ansible_gen.execute_playbook(
                         playbook_path=env_dir / "playbook.yml",
                         inventory_path=env_dir / "inventory.yml",
