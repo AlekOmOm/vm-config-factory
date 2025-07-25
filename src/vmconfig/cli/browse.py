@@ -40,21 +40,23 @@ def show_overview():
     if not templates:
         console.print("No initialized templates found.")
         console.print("Run 'vm-config init <template>' to get started")
-        return
+    else:
+        table = Table(title="Initialized Templates & Environments")
+        table.add_column("Template", style="cyan")
+        table.add_column("Environments", style="green")
+        table.add_column("Count", style="yellow")
+        
+        for template_name, environments in templates.items():
+            table.add_row(
+                template_name,
+                ", ".join(environments),
+                str(len(environments))
+            )
+        
+        console.print(table)
     
-    table = Table(title="Initialized Templates & Environments")
-    table.add_column("Template", style="cyan")
-    table.add_column("Environments", style="green")
-    table.add_column("Count", style="yellow")
-    
-    for template_name, environments in templates.items():
-        table.add_row(
-            template_name,
-            ", ".join(environments),
-            str(len(environments))
-        )
-    
-    console.print(table)
+    console.print("\n[dim]Press Enter to continue...[/dim]")
+    input()
 
 def browse_templates():
     """Browse templates and environments"""
@@ -67,12 +69,14 @@ def browse_templates():
     if not templates:
         console.print("No initialized templates found.")
         console.print("Run 'vm-config init <template>' to get started")
-        return
+    else:
+        for template_name, environments in templates.items():
+            console.print(f"\n[bold cyan]{template_name}[/bold cyan]")
+            for env in environments:
+                console.print(f"  └── {env}")
     
-    for template_name, environments in templates.items():
-        console.print(f"\n[bold cyan]{template_name}[/bold cyan]")
-        for env in environments:
-            console.print(f"  └── {env}")
+    console.print("\n[dim]Press Enter to continue...[/dim]")
+    input()
 
 def show_quick_actions():
     """Show quick actions for templates and environments"""
@@ -178,7 +182,7 @@ def browse_command():
     console.print("="*60)
     
     while True:
-        console.print(Panel("VM Config Factory - Interactive Browser", style="bold blue"))
+        console.print(Panel("VM Config - Interactive Browser", style="bold blue"))
         
         console.print("Available Options:")
         console.print("  [1] 📊 Show Overview")
