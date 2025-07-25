@@ -38,6 +38,12 @@ def show_overview():
         InfoPanel.show_no_templates()
     else:
         InfoPanel.show_templates_table(templates)
+        
+        # Show feature highlights
+        console.print("\n[bold cyan]🎯 Available Features:[/bold cyan]")
+        console.print("• [green]grafana-postgres[/green]: Grafana + PostgreSQL with optional Prometheus data source")
+        console.print("• [green]prometheus[/green]: Standalone Prometheus monitoring stack")
+        console.print("\n[dim]💡 New: grafana-postgres now supports automatic Prometheus integration![/dim]")
     
     TUI.wait_for_enter()
 
@@ -86,6 +92,10 @@ def show_quick_actions():
 
 def handle_environment_actions(template: str, env: str) -> bool:
     """Handle actions for a specific environment"""
+    # Show template-specific features when entering this menu
+    from .lib.tui import InfoPanel
+    InfoPanel.show_template_features(template)
+    
     while True:
         action = ActionMenu.show_environment_actions(template, env)
 
@@ -99,6 +109,11 @@ def handle_environment_actions(template: str, env: str) -> bool:
             return True
         elif action == "a":
             console.print("🔄 Running full workflow...", style="bold yellow")
+            
+            # Show template-specific tips
+            if template == "grafana-postgres":
+                console.print("[dim]💡 Tip: You can enable Prometheus data source during configuration[/dim]")
+            
             TUI.spacer()
             
             success = True
@@ -112,6 +127,11 @@ def handle_environment_actions(template: str, env: str) -> bool:
             
         elif action == "1":
             console.print(f"🔧 Executing: vm-config edit -t {template} -e {env}", style="bold cyan")
+            
+            # Show template-specific editing tips
+            if template == "grafana-postgres":
+                console.print("[dim]💡 New: Configure optional Prometheus data source integration[/dim]")
+            
             TUI.spacer()
             run_command(f"vm-config edit -t {template} -e {env}")
             TUI.wait_for_enter()

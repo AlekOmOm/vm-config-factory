@@ -13,17 +13,13 @@ class NetworkingLayer(ConfigLayer):
         """Detect which service this networking layer is configuring"""
         # Look inside the vars dict where the actual variables are
         vars_dict = vm_config.get('vars', {})
-        print(f"DEBUG: vars keys: {list(vars_dict.keys())}")
         
         if 'prometheus_domain' in vars_dict or 'prometheus_port' in vars_dict:
-            print("DEBUG: Detected prometheus service")
             return 'prometheus'
         elif 'grafana_domain' in vars_dict or 'grafana_port' in vars_dict:
-            print("DEBUG: Detected grafana service") 
             return 'grafana'
         else:
             # Default fallback
-            print("DEBUG: Using default grafana fallback")
             return 'grafana'
     
     def generate_ansible_tasks(self, vm_config: Dict[str, Any]) -> List[AnsibleTask]:

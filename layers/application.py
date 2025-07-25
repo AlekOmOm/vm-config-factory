@@ -28,7 +28,9 @@ class GrafanaLayer(ConfigLayer):
                     "grafana_dirs": [
                         "/opt/grafana/data",
                         "/opt/grafana/config",
-                        "/opt/grafana/logs"
+                        "/opt/grafana/logs",
+                        "/opt/grafana/provisioning",
+                        "/opt/grafana/provisioning/datasources"
                     ]
                 }
             ),
@@ -45,6 +47,26 @@ class GrafanaLayer(ConfigLayer):
                 loop="{{ grafana_dirs }}"
             ),
             AnsibleTask(
+                name="Create Prometheus data source configuration",
+                module="copy",
+                params={
+                    "content": '''apiVersion: 1
+
+datasources:
+  - name: {{ prometheus_datasource_name | default('Prometheus') }}
+    type: prometheus
+    access: {{ prometheus_datasource_access | default('proxy') }}
+    url: {{ prometheus_datasource_url }}
+    isDefault: true
+    editable: true
+    basicAuth: false
+''',
+                    "dest": "/opt/grafana/provisioning/datasources/prometheus.yml",
+                    "mode": "0644"
+                },
+                when="prometheus_datasource_enabled | default(false) | bool"
+            ),
+            AnsibleTask(
                 name="Create Grafana docker-compose file",
                 module="copy",
                 params={
@@ -59,6 +81,7 @@ services:
     volumes:
       - /opt/grafana/data:/var/lib/grafana
       - /opt/grafana/logs:/var/log/grafana
+      - /opt/grafana/provisioning:/etc/grafana/provisioning
     environment:
       - GF_SECURITY_ADMIN_PASSWORD={{ grafana_admin_password }}
       - GF_DATABASE_TYPE=postgres

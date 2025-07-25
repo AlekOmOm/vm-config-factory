@@ -51,7 +51,12 @@ class GrafanaPostgresTemplate(ServiceTemplate):
                         'grafana_database_password': '{{vault.postgres.grafana_password}}',
                         'grafana_domain': default_domain,
                         'nginx_use_ssl': True,  # Default to true, will be auto-detected based on domain
-                        'nginx_ssl_email': 'admin@example.com'
+                        'nginx_ssl_email': 'admin@example.com',
+                        # Prometheus data source configuration (optional)
+                        'prometheus_datasource_enabled': False,
+                        'prometheus_datasource_url': 'http://your-prometheus-ip:9090',
+                        'prometheus_datasource_name': 'Prometheus',
+                        'prometheus_datasource_access': 'proxy'
                     }
                 },
                 'postgres': {
@@ -135,6 +140,24 @@ class GrafanaPostgresTemplate(ServiceTemplate):
                 except ValueError:
                     warnings.append("Invalid IP addresses provided for VMs")
         
+        # Validate Prometheus data source configuration
+        if 'grafana' in vms_config:
+            grafana_vars = vms_config['grafana'].get('vars', {})
+            prometheus_enabled = grafana_vars.get('prometheus_datasource_enabled', False)
+            
+            if prometheus_enabled:
+                prometheus_url = grafana_vars.get('prometheus_datasource_url', '')
+                if not prometheus_url or prometheus_url == 'http://your-prometheus-ip:9090':
+                    errors.append("prometheus_datasource_url must be set when prometheus_datasource_enabled is true")
+                
+                prometheus_access = grafana_vars.get('prometheus_datasource_access', 'proxy')
+                if prometheus_access not in ['proxy', 'direct']:
+                    warnings.append("prometheus_datasource_access should be 'proxy' or 'direct', defaulting to 'proxy'")
+                    
+                # Basic URL validation
+                if prometheus_url and not (prometheus_url.startswith('http://') or prometheus_url.startswith('https://')):
+                    errors.append("prometheus_datasource_url must start with http:// or https://")
+        
         return ValidationResult(
             is_valid=len(errors) == 0,
             errors=errors,
@@ -163,6 +186,10 @@ vault:
     admin_password: "secure_postgres_password_here"
     grafana_user: "grafana_user"
     grafana_password: "secure_grafana_db_password_here"
+  # prometheus:
+  #   # If your Prometheus instance requires authentication, add credentials here
+  #   # username: "prometheus_user"
+  #   # password: "prometheus_password"
 """)
         
         # Create Nginx configuration template for Grafana
@@ -315,6 +342,44 @@ This template automatically detects your domain type and configures SSL appropri
    vm-config apply --env prod
    ```
 
+## Prometheus Integration (Optional)
+
+This template supports optional Prometheus data source configuration for Grafana:
+
+### Enable Prometheus Data Source
+
+To add Prometheus as a data source to Grafana, update your `config.yml`:
+
+```yaml
+vms:
+  grafana:
+    vars:
+      # Enable Prometheus data source
+      prometheus_datasource_enabled: true
+      prometheus_datasource_url: "http://YOUR_PROMETHEUS_IP:9090"
+      prometheus_datasource_name: "Prometheus"          # Optional, defaults to "Prometheus"
+      prometheus_datasource_access: "proxy"             # Optional, defaults to "proxy"
+```
+
+### Configuration Options
+
+- **prometheus_datasource_enabled**: Set to `true` to enable Prometheus data source
+- **prometheus_datasource_url**: URL of your Prometheus instance (required when enabled)
+- **prometheus_datasource_name**: Display name for the data source in Grafana
+- **prometheus_datasource_access**: Access method - "proxy" (default) or "direct"
+
+### Example with Public Prometheus IP
+
+```yaml
+vms:
+  grafana:
+    vars:
+      prometheus_datasource_enabled: true
+      prometheus_datasource_url: "http://203.0.113.10:9090"
+```
+
+When enabled, Grafana will automatically configure the Prometheus data source on startup.
+
 ## Post-Deployment Access
 
 ### AWS Domain Setup
@@ -375,6 +440,12 @@ nginx_ssl_email: "dev@mycompany.com"
 - Nginx: `/var/log/nginx/access.log`, `/var/log/nginx/error.log`
 - Let's Encrypt: `/var/log/letsencrypt/letsencrypt.log`
 - Grafana: `docker logs grafana`
+
+### Prometheus Integration Issues
+- Verify Prometheus URL is accessible: `curl http://your-prometheus-ip:9090/api/v1/label/__name__/values`
+- Check Grafana data source configuration: Login → Configuration → Data Sources
+- View Grafana logs for data source errors: `docker logs grafana`
+- Test connectivity from Grafana container: `docker exec grafana curl http://your-prometheus-ip:9090/api/v1/label/__name__/values`
 
 ## Security Notes
 
