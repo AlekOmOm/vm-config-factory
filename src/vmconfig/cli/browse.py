@@ -32,7 +32,7 @@ def discover_initialized_templates() -> Dict[str, List[str]]:
 def show_overview():
     """Show overview of templates and environments"""
     console.print("\n" + "="*60)
-    console.print("📊 VM Config Factory Overview", style="bold blue")
+    console.print("📊 VM Config Overview", style="bold blue")
     console.print("="*60)
     
     templates = discover_initialized_templates()

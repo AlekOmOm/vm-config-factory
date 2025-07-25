@@ -22,7 +22,13 @@ app.add_typer(layer.app, name="layer")
 
 def main():
     """Main CLI entrypoint"""
-    app()
+    import sys
+    
+    # If no arguments provided, default to browse command
+    if len(sys.argv) == 1:
+        browse.browse_command()
+    else:
+        app()
 
 if __name__ == "__main__":
     main()
