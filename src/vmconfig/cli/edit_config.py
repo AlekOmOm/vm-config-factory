@@ -97,6 +97,7 @@ def edit_vms_section(vms: Dict[str, Any], auto_prompt: bool = False) -> Dict[str
         # Edit host/connection details (handle both 'host' and 'ansible_host')
         if ('host' in vm_config or 'ansible_host' in vm_config) and not auto_prompt:
             current = vm_config.get('host', vm_config.get('ansible_host', ''))
+            console.print("[dim]Tip: You can use SSH config aliases (e.g., 'grafana', 'grafana-db') instead of full hostnames[/dim]")
             new_host = Prompt.ask(f"Host/IP address for {vm_name}", default=current)
             if new_host != current:
                 if 'host' in vm_config:
@@ -196,16 +197,14 @@ def edit_vault_file(vault_path: Path, auto_prompt: bool = False) -> None:
         console.print(f"[red]Error reading vault file: {e}[/red]")
         return
     
-    if not isinstance(vault_data, dict) or 'vault' not in vault_data:
+    if not isinstance(vault_data, dict):
         console.print("[red]Invalid vault file format[/red]")
         return
     
-    vault_config = vault_data['vault']
-    
     # Edit Grafana secrets
-    if 'grafana' in vault_config:
+    if 'grafana' in vault_data:
         console.print("[cyan]Grafana Secrets:[/cyan]")
-        grafana_secrets = vault_config['grafana']
+        grafana_secrets = vault_data['grafana']
         
         if 'admin_password' in grafana_secrets:
             current = grafana_secrets['admin_password']
@@ -216,9 +215,9 @@ def edit_vault_file(vault_path: Path, auto_prompt: bool = False) -> None:
                 grafana_secrets['admin_password'] = new_password
     
     # Edit PostgreSQL secrets
-    if 'postgres' in vault_config:
+    if 'postgres' in vault_data:
         console.print("[cyan]PostgreSQL Secrets:[/cyan]")
-        postgres_secrets = vault_config['postgres']
+        postgres_secrets = vault_data['postgres']
         
         if 'admin_password' in postgres_secrets:
             current = postgres_secrets['admin_password']
