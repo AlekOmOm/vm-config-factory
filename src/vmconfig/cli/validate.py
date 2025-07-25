@@ -8,6 +8,7 @@ from typing import Optional
 
 from vmconfig.framework.templates import TemplateRegistry
 from vmconfig.framework.validation import validate_environment_config
+from .lib.tui import TUI, InfoPanel
 
 console = Console()
 
@@ -16,14 +17,14 @@ def validate_command(
     env: str = typer.Option("dev", "--env", "-e", help="Environment name"),
     config_dir: Path = typer.Option(Path.cwd(), "--config-dir", "-c", help="Config directory")
 ):
-    console.print(f"[bold blue]Validating configuration[/bold blue]")
+    TUI.header("Validating configuration")
 
     try:
         # Use same discovery logic as apply
         if template:
             template_dir = config_dir / "initialized" / template
             if not template_dir.exists():
-                console.print(f"[red]Error: Template '{template}' not initialized[/red]")
+                TUI.error_message(f"Template '{template}' not initialized")
                 raise typer.Exit(1)
             env_dir = template_dir / "environments" / env
         else:
@@ -35,11 +36,12 @@ def validate_command(
                     template = templates[0]
                     env_dir = initialized_dir / template / "environments" / env
                 elif len(templates) > 1:
-                    console.print(f"[red]Multiple templates found: {', '.join(templates)}[/red]")
+                    TUI.error_message(f"Multiple templates found: {', '.join(templates)}")
                     console.print("Specify template with: vm-config validate -t <template> -e {env}")
+                    TUI.spacer()
                     raise typer.Exit(1)
                 else:
-                    console.print("[red]No templates found in initialized/[/red]")
+                    TUI.error_message("No templates found in initialized/")
                     raise typer.Exit(1)
             else:
                 # Legacy structure
@@ -47,7 +49,7 @@ def validate_command(
 
         config_file = env_dir / "config.yml"
         if not config_file.exists():
-            console.print(f"[red]Error: Config file not found: {config_file}[/red]")
+            TUI.error_message(f"Config file not found: {config_file}")
             raise typer.Exit(1)
         with config_file.open() as f:
             env_config = yaml.safe_load(f)
@@ -58,34 +60,48 @@ def validate_command(
         else:
             template_name = env_config.get("template")
             if not template_name:
-                console.print("[red]Error: No template specified in config[/red]")
+                TUI.error_message("No template specified in config")
                 raise typer.Exit(1)
         
         template_class = TemplateRegistry.get_template(template_name)
         if not template_class:
-            console.print(f"[red]Error: Template '{template_name}' not found[/red]")
+            TUI.error_message(f"Template '{template_name}' not found")
             raise typer.Exit(1)
         template_instance = template_class()
         validation_result = validate_environment_config(env_config, template_instance)
+        
         if validation_result.is_valid:
-            console.print("[green]✓ Configuration is valid[/green]")
-            table = Table(title="Configuration Summary")
-            table.add_column("Component", style="cyan")
-            table.add_column("Status", style="green")
-            table.add_column("Details")
+            TUI.success_message("Configuration is valid")
+            
+            table = Table(title="Configuration Summary", style="cyan")
+            table.add_column("Component", style="cyan", width=15)
+            table.add_column("Status", style="green", width=10)
+            table.add_column("Details", width=25)
+            
             table.add_row("Template", "✓", template_name)
             table.add_row("VMs", "✓", f"{len(env_config.get('vms', {}))} defined")
-            table.add_row("Secrets", "✓" if env_config.get("secrets") else "⚠", "Vault configured" if env_config.get("secrets") else "No vault configured")
+            table.add_row("Secrets", "✓" if env_config.get("secrets") else "⚠", 
+                         "Vault configured" if env_config.get("secrets") else "No vault configured")
+            
             console.print(table)
+            TUI.spacer()
         else:
-            console.print("[red]✗ Configuration validation failed[/red]")
+            TUI.error_message("Configuration validation failed")
+            
+            TUI.spacer()
+            console.print("[bold red]Errors:[/bold red]")
             for i, error in enumerate(validation_result.errors, 1):
-                console.print(f"  {i}. {error}")
+                console.print(f"  [red]{i}.[/red] {error}")
+            
             if validation_result.warnings:
-                console.print("\n[yellow]Warnings:[/yellow]")
+                TUI.spacer()
+                console.print("[bold yellow]Warnings:[/bold yellow]")
                 for i, warning in enumerate(validation_result.warnings, 1):
-                    console.print(f"  {i}. {warning}")
+                    console.print(f"  [yellow]{i}.[/yellow] {warning}")
+            
+            TUI.spacer()
             raise typer.Exit(1)
+            
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
+        TUI.error_message(str(e))
         raise typer.Exit(1) 

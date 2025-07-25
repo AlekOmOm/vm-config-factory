@@ -55,11 +55,11 @@ def edit_config_command(
     
     # Edit VM configurations
     if 'vms' in config:
-        config['vms'] = edit_vms_section(config['vms'])
+        config['vms'] = edit_vms_section(config['vms'], auto_prompt)
     
     # Edit secrets section
     if 'secrets' in config:
-        config['secrets'] = edit_secrets_section(config['secrets'])
+        config['secrets'] = edit_secrets_section(config['secrets'], auto_prompt)
     
     # Save changes
     if not auto_prompt:
@@ -72,20 +72,21 @@ def edit_config_command(
     
     console.print(f"[green]✓ Configuration saved to {config_path}[/green]")
 
-def edit_vms_section(vms: Dict[str, Any]) -> Dict[str, Any]:
+def edit_vms_section(vms: Dict[str, Any], auto_prompt: bool = False) -> Dict[str, Any]:
     """Interactive editor for VMs section"""
     
     for vm_name, vm_config in vms.items():
-        console.print(f"\n[bold cyan]Configuring {vm_name} VM[/bold cyan]")
+        if not auto_prompt:
+            console.print(f"\n[bold cyan]Configuring {vm_name} VM[/bold cyan]")
         
         # Edit host/connection details
-        if 'ansible_host' in vm_config:
+        if 'ansible_host' in vm_config and not auto_prompt:
             current = vm_config.get('ansible_host', '')
             new_host = Prompt.ask(f"Ansible host for {vm_name}", default=current)
             if new_host != current:
                 vm_config['ansible_host'] = new_host
         
-        if 'ssh_key_file' in vm_config:
+        if 'ssh_key_file' in vm_config and not auto_prompt:
             current = vm_config.get('ssh_key_file', '')
             new_key = Prompt.ask(f"SSH key file for {vm_name}", default=current)
             if new_key != current:
@@ -93,18 +94,21 @@ def edit_vms_section(vms: Dict[str, Any]) -> Dict[str, Any]:
         
         # Edit VM-specific variables
         if 'vars' in vm_config:
-            vm_config['vars'] = edit_vm_vars(vm_name, vm_config['vars'])
+            vm_config['vars'] = edit_vm_vars(vm_name, vm_config['vars'], auto_prompt)
     
     return vms
 
-def edit_vm_vars(vm_name: str, vars_config: Dict[str, Any]) -> Dict[str, Any]:
+def edit_vm_vars(vm_name: str, vars_config: Dict[str, Any], auto_prompt: bool = False) -> Dict[str, Any]:
     """Interactive editor for VM variables"""
+    
+    if auto_prompt:
+        return vars_config
     
     # Key variables that should be edited
     editable_vars = {
         'grafana_domain': f"Domain for Grafana (current: {vars_config.get('grafana_domain', 'Not set')})",
         'grafana_database_host': f"Database host (current: {vars_config.get('grafana_database_host', 'Not set')})",
-        'nginx_use_ssl': f"Use SSL? (current: {vars_config.get('nginx_use_ssl', 'Not set')})",
+        'nginx_use_ssl': f"Enable nginx_use_ssl? [y/n]",
         'nginx_ssl_email': f"SSL notification email (current: {vars_config.get('nginx_ssl_email', 'Not set')})",
         'postgres_port': f"PostgreSQL port (current: {vars_config.get('postgres_port', 5432)})"
     }
@@ -128,8 +132,11 @@ def edit_vm_vars(vm_name: str, vars_config: Dict[str, Any]) -> Dict[str, Any]:
     
     return vars_config
 
-def edit_secrets_section(secrets: Dict[str, Any]) -> Dict[str, Any]:
+def edit_secrets_section(secrets: Dict[str, Any], auto_prompt: bool = False) -> Dict[str, Any]:
     """Interactive editor for secrets section"""
+    
+    if auto_prompt:
+        return secrets
     
     console.print(f"\n[bold yellow]Secrets Configuration[/bold yellow]")
     

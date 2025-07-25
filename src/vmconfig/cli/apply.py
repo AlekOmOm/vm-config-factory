@@ -10,6 +10,7 @@ import yaml
 from vmconfig.framework.templates import TemplateRegistry
 from vmconfig.framework.validation import validate_environment_config
 from vmconfig.framework.generators.ansible import AnsibleGenerator
+from .lib.tui import TUI
 
 console = Console()
 
@@ -57,16 +58,17 @@ def apply_command(
     
     # Auto-discover template if not specified
     if template:
-        console.print(f"[bold blue]Applying {template} template for {env} environment[/bold blue]")
+        TUI.header(f"Applying {template} template for {env} environment")
         template_dir = config_dir / "initialized" / template
         if not template_dir.exists():
-            console.print(f"[red]Error: Template '{template}' not initialized[/red]")
+            TUI.error_message(f"Template '{template}' not initialized")
             console.print("Run 'vm-config init {template}' first")
+            TUI.spacer()
             raise typer.Exit(1)
         env_dir = template_dir / "environments" / env
     else:
         # Legacy support: auto-discover single template
-        console.print(f"[bold blue]Applying configuration for {env} environment[/bold blue]")
+        TUI.header(f"Applying configuration for {env} environment")
         
         # Check for initialized/ structure first
         initialized_dir = config_dir / "initialized"
@@ -77,11 +79,12 @@ def apply_command(
                 console.print(f"[dim]Auto-detected template: {template}[/dim]")
                 env_dir = initialized_dir / template / "environments" / env
             elif len(templates) > 1:
-                console.print(f"[red]Multiple templates found: {', '.join(templates)}[/red]")
+                TUI.error_message(f"Multiple templates found: {', '.join(templates)}")
                 console.print("Specify template with: vm-config apply -t <template> -e {env}")
+                TUI.spacer()
                 raise typer.Exit(1)
             else:
-                console.print("[red]No templates found in initialized/[/red]")
+                TUI.error_message("No templates found in initialized/")
                 raise typer.Exit(1)
         else:
             # Legacy single-template structure
@@ -91,9 +94,10 @@ def apply_command(
     try:
         config_file = env_dir / "config.yml"
         if not config_file.exists():
-            console.print(f"[red]Error: Config file not found: {config_file}[/red]")
+            TUI.error_message(f"Config file not found: {config_file}")
             console.print("Run 'vm-config init' first to initialize the project")
             logger.error(f"Config file not found: {config_file}")
+            TUI.spacer()
             raise typer.Exit(1)
         with config_file.open() as f:
             env_config = yaml.safe_load(f)
@@ -104,30 +108,35 @@ def apply_command(
         else:
             template_name = env_config.get("template")
             if not template_name:
-                console.print("[red]Error: No template specified in config[/red]")
+                TUI.error_message("No template specified in config")
                 logger.error("No template specified in configuration")
                 raise typer.Exit(1)
         
         template_class = TemplateRegistry.get_template(template_name)
         if not template_class:
-            console.print(f"[red]Error: Template '{template_name}' not found[/red]")
+            TUI.error_message(f"Template '{template_name}' not found")
             available = TemplateRegistry.list_templates()
-            console.print(f"Available templates: {', '.join(available)}")
+            console.print(f"[cyan]Available templates:[/cyan] {', '.join(available)}")
             logger.error(f"Template not found: {template_name}")
+            TUI.spacer()
             raise typer.Exit(1)
         template_instance = template_class()
         validation_result = validate_environment_config(env_config, template_instance)
         if not validation_result.is_valid:
-            console.print("[red]Configuration validation failed:[/red]")
+            TUI.error_message("Configuration validation failed")
+            TUI.spacer()
+            console.print("[bold red]Errors:[/bold red]")
             for error in validation_result.errors:
-                console.print(f"  - {error}")
+                console.print(f"  [red]•[/red] {error}")
                 logger.error(f"Validation error: {error}")
+            TUI.spacer()
             raise typer.Exit(1)
         if validation_result.warnings:
-            console.print("[yellow]Configuration warnings:[/yellow]")
+            console.print("[bold yellow]Configuration warnings:[/bold yellow]")
             for warning in validation_result.warnings:
-                console.print(f"  - {warning}")
+                console.print(f"  [yellow]•[/yellow] {warning}")
                 logger.warning(f"Validation warning: {warning}")
+            TUI.spacer()
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TaskProgressColumn(), console=console) as progress:
             progress_logger = SimpleProgressLogger(logger, progress)
             progress_logger.start_task("Generating Ansible artifacts...", total=3)
@@ -166,22 +175,24 @@ def apply_command(
                     progress_logger.update_task("Ansible execution completed", advance=1)
                     if result.success:
                         progress_logger.complete_task("Configuration applied successfully")
-                        console.print(f"[green]✓ Configuration applied successfully[/green]")
-                        console.print(f"  Changed: {result.changed_tasks}")
-                        console.print(f"  Failed: {result.failed_tasks}")
+                        TUI.success_message("Configuration applied successfully")
+                        console.print(f"  [cyan]Changed:[/cyan] {result.changed_tasks}")
+                        console.print(f"  [cyan]Failed:[/cyan] {result.failed_tasks}")
+                        TUI.spacer()
                     else:
                         progress_logger.error("Configuration failed", None)
-                        console.print(f"[red]✗ Configuration failed[/red]")
+                        TUI.error_message("Configuration failed")
                         console.print(result.error_message)
                         if result.stderr:
                             logger.error(f"Ansible stderr: {result.stderr}")
+                        TUI.spacer()
                         raise typer.Exit(1)
             except Exception as e:
                 progress_logger.error("Apply failed", e)
                 raise
     except Exception as e:
         if not isinstance(e, typer.Exit):
-            console.print(f"[red]Error: {e}[/red]")
+            TUI.error_message(str(e))
             logger.exception("Unexpected error during apply")
             raise typer.Exit(1)
         else:

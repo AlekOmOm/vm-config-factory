@@ -1,0 +1,8 @@
+# Example vault file - encrypt with: ansible-vault encrypt vault-{env}.yml
+vault:
+  grafana:
+    admin_password: "secure_admin_password_here"
+  postgres:
+    admin_password: "secure_postgres_password_here"
+    grafana_user: "grafana_user"
+    grafana_password: "secure_grafana_db_password_here"

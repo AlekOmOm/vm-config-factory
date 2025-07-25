@@ -7,6 +7,7 @@ from typing import Optional
 
 from vmconfig.framework.templates import TemplateRegistry
 from vmconfig.framework.validation import validate_environment_config
+from .lib.tui import TUI, InfoPanel
 
 console = Console()
 
@@ -22,15 +23,17 @@ def init_command(
     
     # Create multi-template workspace structure
     template_dir = output / "initialized" / template
-    console.print(f"[bold blue]Initializing {template} template for {env} environment[/bold blue]")
+    TUI.header(f"Initializing {template} template for {env} environment")
     console.print(f"[dim]Creating in: {template_dir}[/dim]")
+    TUI.spacer()
     
     try:
         template_class = TemplateRegistry.get_template(template)
         if not template_class:
-            console.print(f"[red]Error: Template '{template}' not found[/red]")
+            TUI.error_message(f"Template '{template}' not found")
             available = TemplateRegistry.list_templates()
-            console.print(f"Available templates: {', '.join(available)}")
+            console.print(f"[cyan]Available templates:[/cyan] {', '.join(available)}")
+            TUI.spacer()
             raise typer.Exit(1)
         
         # Check if template directory already exists
@@ -38,6 +41,7 @@ def init_command(
         if template_exists and not force:
             console.print(f"[yellow]Template '{template}' already exists[/yellow]")
             console.print(f"[dim]Only creating {env} environment...[/dim]")
+            TUI.spacer()
         else:
             template_dir.mkdir(parents=True, exist_ok=True)
         
@@ -46,8 +50,9 @@ def init_command(
         
         env_dir = template_dir / "environments" / env
         if env_dir.exists() and not force:
-            console.print(f"[red]Environment '{env}' already exists for template '{template}'[/red]")
+            TUI.error_message(f"Environment '{env}' already exists for template '{template}'")
             console.print("Use --force to overwrite")
+            TUI.spacer()
             raise typer.Exit(1)
         
         env_dir.mkdir(parents=True, exist_ok=True)
@@ -62,8 +67,9 @@ def init_command(
             template_instance.generate_initial_assets(template_dir)
         else:
             console.print(f"[dim]Reusing existing template assets...[/dim]")
+        TUI.spacer()
         
-        console.print(f"[green]✓ Environment '{env}' initialized for template '{template}'[/green]")
+        TUI.success_message(f"Environment '{env}' initialized for template '{template}'")
         console.print(f"[dim]Template location: {template_dir}[/dim]")
         console.print(f"[dim]Environment config: {config_file}[/dim]")
         
@@ -72,10 +78,11 @@ def init_command(
             from vmconfig.cli.edit_config import prompt_edit_after_init
             prompt_edit_after_init(config_file, template, env)
         
-        console.print(f"[dim]Next steps:[/dim]")
-        console.print(f"  1. Run: vm-config validate -t {template} -e {env}")
-        console.print(f"  2. Run: vm-config apply -t {template} -e {env}")
-        console.print(f"  3. Or browse all: vm-config browse")
+        TUI.section_header("Next steps:", "dim")
+        console.print(f"  [cyan]1.[/cyan] Run: [bold]vm-config validate -t {template} -e {env}[/bold]")
+        console.print(f"  [cyan]2.[/cyan] Run: [bold]vm-config apply -t {template} -e {env}[/bold]")
+        console.print(f"  [cyan]3.[/cyan] Or browse all: [bold]vm-config browse[/bold]")
+        TUI.spacer()
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
+        TUI.error_message(str(e))
         raise typer.Exit(1) 

@@ -1,0 +1,45 @@
+metadata:
+  description: Grafana monitoring platform with PostgreSQL database on separate VMs
+    - dev environment
+  environment: dev
+  owner: platform-team
+secrets:
+  description: Ansible vault file containing sensitive variables
+  vault_file: vault-dev.yml
+template: grafana-postgres
+validation:
+  connectivity_checks: true
+  port_availability:
+  - 3000
+  - 5432
+  - 80
+  - 443
+  ssl_cert_expiry: 30
+vms:
+  grafana:
+    ansible_user: ubuntu
+    host: 10.0.1.10
+    vars:
+      grafana_admin_password: '{{vault.grafana.admin_password}}'
+      grafana_admin_user: admin
+      grafana_database_host: '{{vms.postgres.host}}'
+      grafana_database_name: grafana
+      grafana_database_password: '{{vault.postgres.grafana_password}}'
+      grafana_database_user: '{{vault.postgres.grafana_user}}'
+      grafana_domain: localhost
+      grafana_port: 3000
+      nginx_ssl_email: admin@example.com
+      nginx_use_ssl: true
+  postgres:
+    ansible_user: ubuntu
+    host: 10.0.1.11
+    vars:
+      postgres_databases:
+      - grafana
+      postgres_default_db: postgres
+      postgres_password: '{{vault.postgres.admin_password}}'
+      postgres_port: 5432
+      postgres_users:
+      - db: grafana
+        name: '{{vault.postgres.grafana_user}}'
+        password: '{{vault.postgres.grafana_password}}'

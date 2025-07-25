@@ -4,10 +4,9 @@ import subprocess
 import sys
 from pathlib import Path
 from rich.console import Console
-from rich.prompt import Prompt
-from rich.panel import Panel
-from rich.table import Table
 from typing import List, Dict, Tuple, Optional
+
+from .lib.tui import TUI, Menu, InfoPanel, ActionMenu
 
 console = Console()
 
@@ -31,168 +30,139 @@ def discover_initialized_templates() -> Dict[str, List[str]]:
 
 def show_overview():
     """Show overview of templates and environments"""
-    console.print("\n" + "="*60)
-    console.print("📊 VM Config Overview", style="bold blue")
-    console.print("="*60)
+    TUI.header("VM Config Overview")
     
     templates = discover_initialized_templates()
     
     if not templates:
-        console.print("No initialized templates found.")
-        console.print("Run 'vm-config init <template>' to get started")
+        InfoPanel.show_no_templates()
     else:
-        table = Table(title="Initialized Templates & Environments")
-        table.add_column("Template", style="cyan")
-        table.add_column("Environments", style="green")
-        table.add_column("Count", style="yellow")
-        
-        for template_name, environments in templates.items():
-            table.add_row(
-                template_name,
-                ", ".join(environments),
-                str(len(environments))
-            )
-        
-        console.print(table)
+        InfoPanel.show_templates_table(templates)
     
-    console.print("\n[dim]Press Enter to continue...[/dim]")
-    input()
+    TUI.wait_for_enter()
 
 def browse_templates():
     """Browse templates and environments"""
-    console.print("\n" + "="*60)
-    console.print("🔍 Browse Templates & Environments", style="bold green")
-    console.print("="*60)
+    TUI.header("Browse Templates & Environments")
     
     templates = discover_initialized_templates()
     
     if not templates:
-        console.print("No initialized templates found.")
-        console.print("Run 'vm-config init <template>' to get started")
+        InfoPanel.show_no_templates()
     else:
-        for template_name, environments in templates.items():
-            console.print(f"\n[bold cyan]{template_name}[/bold cyan]")
-            for env in environments:
-                console.print(f"  └── {env}")
+        InfoPanel.show_templates_tree(templates)
     
-    console.print("\n[dim]Press Enter to continue...[/dim]")
-    input()
+    TUI.wait_for_enter()
 
 def show_quick_actions():
     """Show quick actions for templates and environments"""
-    console.print(Panel("⚡ Quick Actions", style="bold yellow"))
-    
     templates = discover_initialized_templates()
     
     if not templates:
-        console.print("No initialized templates found.")
-        console.print("Run 'vm-config init <template>' to get started")
+        TUI.header("Quick Actions")
+        InfoPanel.show_no_templates()
+        TUI.wait_for_enter()
         return True
     
-    console.print("Available environments:")
-    
-    options = []
-    index = 1
-    for template_name, environments in templates.items():
-        for env in environments:
-            console.print(f"[{index}] {template_name} - {env}")
-            console.print(f"    • vm-config edit -t {template_name} -e {env}")
-            console.print(f"    • vm-config validate -t {template_name} -e {env}")
-            console.print(f"    • vm-config apply -t {template_name} -e {env}")
-            options.append((template_name, env))
-            index += 1
-    
-    console.print("Actions:")
-    console.print("   Copy all commands to clipboard")
-    console.print("  [0] Back to main menu")
+    options = ActionMenu.show_environment_list(templates)
     
     while True:
-        choice = Prompt.ask("Select environment (number) or action (0)", default="0")
+        choice = input("Select environment (number) or action [0]: ").strip()
         
-        if choice == "0":
+        if choice == "0" or choice.lower() == "q":
             return True
         
         try:
             choice_idx = int(choice) - 1
             if 0 <= choice_idx < len(options):
                 template_name, env = options[choice_idx]
-                return handle_environment_actions(template_name, env)
+                if not handle_environment_actions(template_name, env):
+                    return False
+                break
             else:
-                console.print("[red]Invalid selection[/red]")
+                TUI.error_message("Invalid selection")
         except ValueError:
-            console.print("[red]Please enter a number[/red]")
+            TUI.error_message("Please enter a number")
 
 def handle_environment_actions(template: str, env: str) -> bool:
     """Handle actions for a specific environment"""
     while True:
-        console.print(f"\n🎯 {template} - {env}")
-        console.print("Available commands:")
-        console.print("   Run all (edit → validate → apply)")
-        console.print("  [1] Edit configuration")
-        console.print("  [2] Validate configuration") 
-        console.print("  [3] Apply configuration")
-        console.print("  [0] Back to environment list")
+        action = ActionMenu.show_environment_actions(template, env)
         
-        action = Prompt.ask("Choose action [a/1/2/3/0/q]", default="a")
-        
-        if action in ["q", "quit"]:
+        if action.lower() == "q":
             return False
         elif action == "0":
             return True
         elif action == "a":
-            console.print("Running full workflow...")
+            console.print("🔄 Running full workflow...", style="bold yellow")
+            TUI.spacer()
+            
             success = True
             success &= run_command(f"vm-config edit -t {template} -e {env}")
             if success:
                 success &= run_command(f"vm-config validate -t {template} -e {env}")
             if success:
                 success &= run_command(f"vm-config apply -t {template} -e {env}")
+                
+            TUI.wait_for_enter("Press Enter to continue...")
+            
         elif action == "1":
-            console.print(f"Executing: vm-config edit -t {template} -e {env}")
+            console.print(f"🔧 Executing: vm-config edit -t {template} -e {env}", style="bold cyan")
+            TUI.spacer()
             run_command(f"vm-config edit -t {template} -e {env}")
+            TUI.wait_for_enter()
+            
         elif action == "2":
-            console.print(f"Executing: vm-config validate -t {template} -e {env}")
+            console.print(f"✅ Executing: vm-config validate -t {template} -e {env}", style="bold blue")
+            TUI.spacer()
             run_command(f"vm-config validate -t {template} -e {env}")
+            TUI.wait_for_enter()
+            
         elif action == "3":
-            console.print(f"Executing: vm-config apply -t {template} -e {env}")
+            console.print(f"🚀 Executing: vm-config apply -t {template} -e {env}", style="bold green")
+            TUI.spacer()
             run_command(f"vm-config apply -t {template} -e {env}")
+            TUI.wait_for_enter()
+            
         else:
-            console.print("[red]Invalid choice[/red]")
+            TUI.error_message("Invalid choice")
 
 def run_command(cmd: str) -> bool:
     """Run a command and return success status"""
     try:
         result = subprocess.run(cmd.split(), check=True, capture_output=True, text=True)
-        console.print("✓ Command completed successfully")
+        TUI.success_message("Command completed successfully")
         if result.stdout:
             console.print(result.stdout)
         return True
     except subprocess.CalledProcessError as e:
-        console.print(f"✗ Command failed: {e}")
+        TUI.error_message(f"Command failed: {e}")
         if e.stderr:
             console.print(f"[red]{e.stderr}[/red]")
         return False
     except Exception as e:
-        console.print(f"✗ Command failed: {e}")
+        TUI.error_message(f"Command failed: {e}")
         return False
 
 def browse_command():
     """Main browse command interface"""
-    console.print("💡 Tip: Press 'q' anytime to quit")
-    console.print("="*60)
+    TUI.info_message("Press 'q' anytime to quit")
     
     while True:
-        console.print(Panel("VM Config - Interactive Browser", style="bold blue"))
+        menu = Menu(
+            "VM Config - Interactive Browser",
+            [
+                ("1", "📊 Show Overview"),
+                ("2", "🔍 Browse Templates & Environments"),
+                ("3", "⚡ Quick Actions"),
+                ("q", "Quit")
+            ],
+            default_choice="2"
+        )
         
-        console.print("Available Options:")
-        console.print("  [1] 📊 Show Overview")
-        console.print("  [2] 🔍 Browse Templates & Environments") 
-        console.print("  [3] ⚡ Quick Actions")
-        console.print("   🚪 Quit")
+        choice = menu.show()
         
-        choice = Prompt.ask("Choose option [1/2/3/q]", default="2")
-        
-        if choice in ["q", "quit"]:
+        if choice.lower() == "q":
             break
         elif choice == "1":
             show_overview()
@@ -200,6 +170,4 @@ def browse_command():
             browse_templates()
         elif choice == "3":
             if not show_quick_actions():
-                break
-        else:
-            console.print("[red]Invalid choice[/red]") 
+                break 
