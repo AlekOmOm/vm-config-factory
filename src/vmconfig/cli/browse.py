@@ -88,6 +88,10 @@ def handle_environment_actions(template: str, env: str) -> bool:
     """Handle actions for a specific environment"""
     while True:
         action = ActionMenu.show_environment_actions(template, env)
+
+        TUI.debug_message(f"Action: {action}")
+        TUI.debug_message(f"Template: {template}")
+        TUI.debug_message(f"Env: {env}")
         
         if action.lower() == "q":
             return False

@@ -210,3 +210,4 @@ marimo/_lsp/
 __marimo__/
 test/grafana-postgres-dev/environments/dev/config.yml
 test/grafana-postgres-dev/environments/dev/vault-dev.yml
+initialized/*

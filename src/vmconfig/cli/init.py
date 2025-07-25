@@ -4,6 +4,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.prompt import Prompt
 from typing import Optional
+import shutil
 
 from vmconfig.framework.templates import TemplateRegistry
 from vmconfig.framework.validation import validate_environment_config
@@ -67,6 +68,18 @@ def init_command(
             template_instance.generate_initial_assets(template_dir)
         else:
             console.print(f"[dim]Reusing existing template assets...[/dim]")
+        
+        # Copy vault example file to environment
+        assets_dir = template_dir / "assets"
+        vault_example_file = assets_dir / "vault-example.yml"
+        vault_env_file = env_dir / f"vault-{env}.yml"
+        
+        if vault_example_file.exists():
+            console.print(f"[dim]Copying vault example to vault-{env}.yml...[/dim]")
+            shutil.copy2(vault_example_file, vault_env_file)
+        else:
+            console.print(f"[yellow]Warning: vault-example.yml not found in assets[/yellow]")
+        
         TUI.spacer()
         
         TUI.success_message(f"Environment '{env}' initialized for template '{template}'")
