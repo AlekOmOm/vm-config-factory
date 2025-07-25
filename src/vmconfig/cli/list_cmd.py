@@ -63,7 +63,7 @@ def list_layers():
     
     console.print(table)
 
-@app.command()
+@app.callback(invoke_without_command=True)
 def main():
     """List all available templates and layers"""
     list_templates()

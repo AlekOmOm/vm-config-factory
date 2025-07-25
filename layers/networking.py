@@ -48,6 +48,26 @@ class NetworkingLayer(ConfigLayer):
                 }
             ),
             AnsibleTask(
+                name="Deploy Grafana nginx site configuration",
+                module="template",
+                params={
+                    "src": "grafana-nginx.conf.j2",
+                    "dest": "/etc/nginx/sites-available/grafana",
+                    "mode": "0644"
+                },
+                notify="reload nginx"
+            ),
+            AnsibleTask(
+                name="Enable Grafana nginx site",
+                module="file",
+                params={
+                    "src": "/etc/nginx/sites-available/grafana",
+                    "dest": "/etc/nginx/sites-enabled/grafana",
+                    "state": "link"
+                },
+                notify="reload nginx"
+            ),
+            AnsibleTask(
                 name="Configure Nginx proxy settings",
                 module="copy",
                 params={
@@ -71,6 +91,16 @@ proxy_buffers 8 8k;
                     "mode": "0644"
                 },
                 notify="reload nginx"
+            ),
+            AnsibleTask(
+                name="Remove SSL configuration when SSL is disabled",
+                module="file",
+                params={
+                    "path": "/etc/nginx/conf.d/ssl.conf",
+                    "state": "absent"
+                },
+                notify="reload nginx",
+                when="not (nginx_use_ssl | default(false))"
             ),
             AnsibleTask(
                 name="Configure SSL parameters",
@@ -98,7 +128,8 @@ add_header X-XSS-Protection "1; mode=block" always;
                     "dest": "/etc/nginx/conf.d/ssl.conf",
                     "mode": "0644"
                 },
-                notify="reload nginx"
+                notify="reload nginx",
+                when="nginx_use_ssl | default(false)"
             ),
             AnsibleTask(
                 name="Allow HTTP traffic through firewall",
@@ -117,6 +148,54 @@ add_header X-XSS-Protection "1; mode=block" always;
                     "port": "443",
                     "proto": "tcp"
                 }
+            ),
+            AnsibleTask(
+                name="Check if SSL certificate acquisition is needed",
+                module="set_fact",
+                params={
+                    "need_ssl_cert": "{{ nginx_use_ssl | default(false) and 'amazonaws.com' not in (grafana_domain | default('')) }}"
+                }
+            ),
+            AnsibleTask(
+                name="Stop Nginx for SSL certificate acquisition",
+                module="service",
+                params={
+                    "name": "nginx",
+                    "state": "stopped"
+                },
+                when="need_ssl_cert and ansible_facts.services['nginx.service'].state == 'running'"
+            ),
+            AnsibleTask(
+                name="Obtain SSL certificate with certbot",
+                module="command",
+                params={
+                    "cmd": "certbot certonly --standalone -d {{ grafana_domain }} --non-interactive --agree-tos --email {{ nginx_ssl_email | default('admin@' + grafana_domain) }}",
+                    "creates": "/etc/letsencrypt/live/{{ grafana_domain }}/fullchain.pem"
+                },
+                when="need_ssl_cert"
+            ),
+            AnsibleTask(
+                name="Start Nginx after SSL certificate acquisition",
+                module="service",
+                params={
+                    "name": "nginx",
+                    "state": "started"
+                },
+                when="need_ssl_cert"
+            ),
+            AnsibleTask(
+                name="Set up automatic SSL certificate renewal",
+                module="cron",
+                params={
+                    "name": "Renew SSL certificates",
+                    "minute": "0",
+                    "hour": "12",
+                    "day": "*",
+                    "month": "*",
+                    "weekday": "*",
+                    "job": "/usr/bin/certbot renew --quiet && systemctl reload nginx"
+                },
+                when="need_ssl_cert"
             ),
             AnsibleTask(
                 name="Test Nginx configuration",

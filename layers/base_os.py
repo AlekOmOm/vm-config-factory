@@ -29,17 +29,6 @@ class BaseOSLayer(ConfigLayer):
                 }
             ),
             AnsibleTask(
-                name="Configure SSH hardening",
-                module="lineinfile",
-                params={
-                    "path": "/etc/ssh/sshd_config",
-                    "regexp": "^#?{{ item.key }}",
-                    "line": "{{ item.key }} {{ item.value }}",
-                    "state": "present"
-                },
-                notify="restart ssh"
-            ),
-            AnsibleTask(
                 name="Set SSH hardening parameters",
                 module="set_fact",
                 params={
@@ -60,6 +49,7 @@ class BaseOSLayer(ConfigLayer):
                     "line": "{{ item.key }} {{ item.value }}",
                     "state": "present"
                 },
+                loop="{{ ssh_hardening }}",
                 notify="restart ssh"
             ),
             AnsibleTask(

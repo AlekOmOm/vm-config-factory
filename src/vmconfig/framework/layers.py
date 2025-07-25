@@ -12,6 +12,12 @@ class AnsibleTask:
     notify: Optional[str] = None
     when: Optional[str] = None
     become: Optional[bool] = None
+    retries: Optional[int] = None
+    delay: Optional[int] = None
+    loop: Optional[Any] = None
+    register: Optional[str] = None
+    until: Optional[str] = None
+    ignore_errors: Optional[bool] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to Ansible task dictionary"""
@@ -26,6 +32,18 @@ class AnsibleTask:
             task["when"] = self.when
         if self.become is not None:
             task["become"] = self.become
+        if self.retries is not None:
+            task["retries"] = self.retries
+        if self.delay is not None:
+            task["delay"] = self.delay
+        if self.loop is not None:
+            task["loop"] = self.loop
+        if self.register is not None:
+            task["register"] = self.register
+        if self.until is not None:
+            task["until"] = self.until
+        if self.ignore_errors is not None:
+            task["ignore_errors"] = self.ignore_errors
             
         return task
 

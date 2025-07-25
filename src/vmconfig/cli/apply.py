@@ -5,53 +5,47 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from typing import Optional
 import logging
+import yaml
 
 from vmconfig.framework.templates import TemplateRegistry
 from vmconfig.framework.validation import validate_environment_config
 from vmconfig.framework.generators.ansible import AnsibleGenerator
 
-# Simple logging setup since logging module may not be available
+console = Console()
+
 def setup_simple_logging(verbose=False):
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=level, format='%(levelname)s: %(message)s')
     return logging.getLogger('vmconfig')
 
 class SimpleProgressLogger:
-    """Simple progress logger fallback"""
     def __init__(self, logger, progress=None):
         self.logger = logger
         self.progress = progress
         self.current_task = None
-    
     def start_task(self, description, total=None):
         if self.progress:
             self.current_task = self.progress.add_task(description, total=total)
         self.logger.info(f"Started: {description}")
-    
     def update_task(self, description=None, advance=1):
         if self.progress and self.current_task is not None:
             if description:
                 self.progress.update(self.current_task, description=description)
             self.progress.advance(self.current_task, advance)
-    
     def complete_task(self, description=None):
         if description:
             self.logger.info(f"Completed: {description}")
         if self.progress and self.current_task is not None:
             self.progress.update(self.current_task, completed=True)
             self.current_task = None
-    
     def error(self, message, exception=None):
         if exception:
             self.logger.error(f"{message}: {exception}")
         else:
             self.logger.error(message)
 
-app = typer.Typer(help="Apply configuration to target VMs")
-console = Console()
-
-@app.command()
-def main(
+def apply_command(
+    template: Optional[str] = typer.Option(None, "--template", "-t", help="Template name (e.g., grafana-postgres)"),
     env: str = typer.Option("dev", "--env", "-e", help="Environment name"),
     vm: Optional[str] = typer.Option(None, "--vm", help="Target specific VM only"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be done"),
@@ -59,43 +53,61 @@ def main(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose logging"),
     log_file: Optional[Path] = typer.Option(None, "--log-file", help="Log file path")
 ):
-    """Apply configuration to target VMs"""
-    
-    # Setup logging
-    log_level = "DEBUG" if verbose else "INFO"
     logger = setup_simple_logging(verbose)
     
-    console.print(f"[bold blue]Applying configuration for {env} environment[/bold blue]")
-    logger.info(f"Starting apply command for environment: {env}")
+    # Auto-discover template if not specified
+    if template:
+        console.print(f"[bold blue]Applying {template} template for {env} environment[/bold blue]")
+        template_dir = config_dir / "initialized" / template
+        if not template_dir.exists():
+            console.print(f"[red]Error: Template '{template}' not initialized[/red]")
+            console.print("Run 'vm-config init {template}' first")
+            raise typer.Exit(1)
+        env_dir = template_dir / "environments" / env
+    else:
+        # Legacy support: auto-discover single template
+        console.print(f"[bold blue]Applying configuration for {env} environment[/bold blue]")
+        
+        # Check for initialized/ structure first
+        initialized_dir = config_dir / "initialized"
+        if initialized_dir.exists():
+            templates = [d.name for d in initialized_dir.iterdir() if d.is_dir()]
+            if len(templates) == 1:
+                template = templates[0]
+                console.print(f"[dim]Auto-detected template: {template}[/dim]")
+                env_dir = initialized_dir / template / "environments" / env
+            elif len(templates) > 1:
+                console.print(f"[red]Multiple templates found: {', '.join(templates)}[/red]")
+                console.print("Specify template with: vm-config apply -t <template> -e {env}")
+                raise typer.Exit(1)
+            else:
+                console.print("[red]No templates found in initialized/[/red]")
+                raise typer.Exit(1)
+        else:
+            # Legacy single-template structure
+            env_dir = config_dir / "environments" / env
     
+    logger.info(f"Starting apply command for template: {template}, environment: {env}")
     try:
-        # Load environment config
-        env_dir = config_dir / "environments" / env
         config_file = env_dir / "config.yml"
-        
-        logger.debug(f"Looking for config file: {config_file}")
-        
         if not config_file.exists():
             console.print(f"[red]Error: Config file not found: {config_file}[/red]")
             console.print("Run 'vm-config init' first to initialize the project")
             logger.error(f"Config file not found: {config_file}")
             raise typer.Exit(1)
-        
-        # Load and validate config
-        import yaml
-        logger.debug("Loading configuration file")
         with config_file.open() as f:
             env_config = yaml.safe_load(f)
         
-        template_name = env_config.get("template")
-        if not template_name:
-            console.print("[red]Error: No template specified in config[/red]")
-            logger.error("No template specified in configuration")
-            raise typer.Exit(1)
+        # Use explicit template if provided, otherwise fall back to config
+        if template:
+            template_name = template
+        else:
+            template_name = env_config.get("template")
+            if not template_name:
+                console.print("[red]Error: No template specified in config[/red]")
+                logger.error("No template specified in configuration")
+                raise typer.Exit(1)
         
-        logger.info(f"Using template: {template_name}")
-        
-        # Get template
         template_class = TemplateRegistry.get_template(template_name)
         if not template_class:
             console.print(f"[red]Error: Template '{template_name}' not found[/red]")
@@ -103,12 +115,7 @@ def main(
             console.print(f"Available templates: {', '.join(available)}")
             logger.error(f"Template not found: {template_name}")
             raise typer.Exit(1)
-        
         template_instance = template_class()
-        logger.debug(f"Initialized template: {template_instance.__class__.__name__}")
-        
-        # Validate configuration
-        logger.info("Validating configuration")
         validation_result = validate_environment_config(env_config, template_instance)
         if not validation_result.is_valid:
             console.print("[red]Configuration validation failed:[/red]")
@@ -116,81 +123,66 @@ def main(
                 console.print(f"  - {error}")
                 logger.error(f"Validation error: {error}")
             raise typer.Exit(1)
-        
         if validation_result.warnings:
             console.print("[yellow]Configuration warnings:[/yellow]")
             for warning in validation_result.warnings:
                 console.print(f"  - {warning}")
                 logger.warning(f"Validation warning: {warning}")
-        
-        # Generate and execute Ansible artifacts
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console
-        ) as progress:
-            
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TaskProgressColumn(), console=console) as progress:
             progress_logger = SimpleProgressLogger(logger, progress)
-            
             progress_logger.start_task("Generating Ansible artifacts...", total=3)
-            
             try:
                 ansible_gen = AnsibleGenerator(template_instance)
-                artifacts = ansible_gen.generate_artifacts(env_config, env_dir)
-                
+
+                vault_file = None
+                if "secrets" in env_config and "vault_file" in env_config.get("secrets", {}):
+                    vault_file = env_config["secrets"]["vault_file"]
+
+                artifacts = ansible_gen.generate_artifacts(env_config, env_dir, vault_file=vault_file)
                 progress_logger.update_task("Generated artifacts successfully", advance=1)
-                logger.info(f"Generated {len(artifacts)} artifacts")
                 
+                use_vault = bool(vault_file)
+
                 if dry_run:
                     progress_logger.update_task("DRY RUN - Showing planned execution", advance=2)
                     console.print("[yellow]DRY RUN - Would execute:[/yellow]")
                     for artifact in artifacts:
                         console.print(f"  - {artifact.path}")
-                        logger.info(f"Would execute: {artifact.path}")
                     progress_logger.complete_task("Dry run completed")
                 else:
                     progress_logger.update_task("Executing Ansible playbook...", advance=1)
-                    
-                    # Execute Ansible
+                    if use_vault:
+                        progress.stop()
+                        console.print("\n[bold yellow]Ansible Vault password required.[/bold yellow]")
                     result = ansible_gen.execute_playbook(
                         playbook_path=env_dir / "playbook.yml",
                         inventory_path=env_dir / "inventory.yml",
-                        target_vm=vm
+                        target_vm=vm,
+                        use_vault=use_vault,
+                        cwd=env_dir,
                     )
-                    
+                    if use_vault:
+                        progress.start()
                     progress_logger.update_task("Ansible execution completed", advance=1)
-                    
                     if result.success:
                         progress_logger.complete_task("Configuration applied successfully")
                         console.print(f"[green]✓ Configuration applied successfully[/green]")
                         console.print(f"  Changed: {result.changed_tasks}")
                         console.print(f"  Failed: {result.failed_tasks}")
-                        logger.info(f"Apply successful - Changed: {result.changed_tasks}, Failed: {result.failed_tasks}")
-                        
-                        if verbose and result.stdout:
-                            console.print("\n[dim]Ansible output:[/dim]")
-                            console.print(result.stdout)
                     else:
                         progress_logger.error("Configuration failed", None)
                         console.print(f"[red]✗ Configuration failed[/red]")
                         console.print(result.error_message)
-                        logger.error(f"Apply failed: {result.error_message}")
-                        
                         if result.stderr:
                             logger.error(f"Ansible stderr: {result.stderr}")
-                        
                         raise typer.Exit(1)
-            
             except Exception as e:
-                progress_logger.error(f"Apply failed", e)
+                progress_logger.error("Apply failed", e)
                 raise
-        
     except Exception as e:
         if not isinstance(e, typer.Exit):
             console.print(f"[red]Error: {e}[/red]")
             logger.exception("Unexpected error during apply")
             raise typer.Exit(1)
         else:
-            raise
+            raise 

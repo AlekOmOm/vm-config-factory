@@ -67,16 +67,6 @@ class DockerLayer(ConfigLayer):
                 }
             ),
             AnsibleTask(
-                name="Configure Docker daemon",
-                module="copy",
-                params={
-                    "content": '''{{ docker_daemon_config | to_nice_json }}''',
-                    "dest": "/etc/docker/daemon.json",
-                    "mode": "0644"
-                },
-                notify="restart docker"
-            ),
-            AnsibleTask(
                 name="Set Docker daemon configuration",
                 module="set_fact",
                 params={
@@ -89,6 +79,16 @@ class DockerLayer(ConfigLayer):
                         "storage-driver": "overlay2"
                     }
                 }
+            ),
+            AnsibleTask(
+                name="Configure Docker daemon",
+                module="copy",
+                params={
+                    "content": '''{{ docker_daemon_config | to_nice_json }}''',
+                    "dest": "/etc/docker/daemon.json",
+                    "mode": "0644"
+                },
+                notify="restart docker"
             ),
             AnsibleTask(
                 name="Create docker compose directory",

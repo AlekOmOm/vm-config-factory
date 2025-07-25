@@ -13,14 +13,12 @@ class GrafanaLayer(ConfigLayer):
         """Generate Grafana configuration tasks"""
         tasks = [
             AnsibleTask(
-                name="Create grafana directories",
-                module="file",
+                name="Allow Grafana port through firewall",
+                module="ufw",
                 params={
-                    "path": "{{ item }}",
-                    "state": "directory",
-                    "mode": "0755",
-                    "owner": "472",  # Grafana user ID in container
-                    "group": "472"
+                    "rule": "allow",
+                    "port": "{{ grafana_port | default(3000) }}",
+                    "proto": "tcp"
                 }
             ),
             AnsibleTask(
@@ -33,6 +31,18 @@ class GrafanaLayer(ConfigLayer):
                         "/opt/grafana/logs"
                     ]
                 }
+            ),
+            AnsibleTask(
+                name="Create grafana directories",
+                module="file",
+                params={
+                    "path": "{{ item }}",
+                    "state": "directory",
+                    "mode": "0755",
+                    "owner": "472",  # Grafana user ID in container
+                    "group": "472"
+                },
+                loop="{{ grafana_dirs }}"
             ),
             AnsibleTask(
                 name="Create Grafana docker-compose file",
@@ -69,10 +79,12 @@ networks:
             ),
             AnsibleTask(
                 name="Start Grafana container",
-                module="docker_compose",
+                module="community.docker.docker_compose_v2",
                 params={
                     "project_src": "/opt/grafana",
-                    "state": "present"
+                    "state": "present",
+                    "recreate": "auto",
+                    "remove_orphans": True
                 }
             ),
             AnsibleTask(
@@ -95,9 +107,10 @@ networks:
         return [
             {
                 "name": "restart grafana",
-                "docker_compose": {
+                "community.docker.docker_compose_v2": {
                     "project_src": "/opt/grafana",
-                    "restarted": True
+                    "state": "present",
+                    "recreate": "always"
                 }
             }
         ]
@@ -159,15 +172,6 @@ class PostgreSQLLayer(ConfigLayer):
         """Generate PostgreSQL configuration tasks"""
         tasks = [
             AnsibleTask(
-                name="Create PostgreSQL directories",
-                module="file",
-                params={
-                    "path": "{{ item }}",
-                    "state": "directory",
-                    "mode": "0755"
-                }
-            ),
-            AnsibleTask(
                 name="Set PostgreSQL directories",
                 module="set_fact",
                 params={
@@ -178,6 +182,16 @@ class PostgreSQLLayer(ConfigLayer):
                         "/opt/backups/postgres"
                     ]
                 }
+            ),
+            AnsibleTask(
+                name="Create PostgreSQL directories",
+                module="file",
+                params={
+                    "path": "{{ item }}",
+                    "state": "directory",
+                    "mode": "0755"
+                },
+                loop="{{ postgres_dirs }}"
             ),
             AnsibleTask(
                 name="Create PostgreSQL configuration",
@@ -262,7 +276,7 @@ networks:
             ),
             AnsibleTask(
                 name="Start PostgreSQL container",
-                module="docker_compose",
+                module="community.docker.docker_compose_v2",
                 params={
                     "project_src": "/opt/postgres",
                     "state": "present"
@@ -281,43 +295,30 @@ networks:
                 delay=5
             ),
             AnsibleTask(
-                name="Create application databases",
-                module="postgresql_db",
-                params={
-                    "name": "{{ item }}",
-                    "login_host": "localhost",
-                    "login_user": "postgres",
-                    "login_password": "{{ postgres_password }}",
-                    "state": "present"
-                }
-            ),
-            AnsibleTask(
-                name="Set application databases",
-                module="set_fact",
-                params={
-                    "postgres_databases": "{{ postgres_databases | default(['grafana']) }}"
-                }
-            ),
-            AnsibleTask(
                 name="Create application users",
                 module="postgresql_user",
                 params={
                     "name": "{{ item.name }}",
                     "password": "{{ item.password }}",
-                    "db": "{{ item.db }}",
+                    "state": "present",
                     "login_host": "localhost",
                     "login_user": "postgres",
-                    "login_password": "{{ postgres_password }}",
-                    "priv": "ALL",
-                    "state": "present"
-                }
+                    "login_password": "{{ postgres_password }}"
+                },
+                loop="{{ postgres_users | default([]) }}"
             ),
             AnsibleTask(
-                name="Set application users",
-                module="set_fact",
+                name="Create application databases",
+                module="postgresql_db",
                 params={
-                    "postgres_users": "{{ postgres_users | default([]) }}"
-                }
+                    "name": "{{ item.db }}",
+                    "owner": "{{ item.name }}",
+                    "state": "present",
+                    "login_host": "localhost",
+                    "login_user": "postgres",
+                    "login_password": "{{ postgres_password }}"
+                },
+                loop="{{ postgres_users | default([]) }}"
             )
         ]
         
@@ -328,9 +329,10 @@ networks:
         return [
             {
                 "name": "restart postgres",
-                "docker_compose": {
+                "community.docker.docker_compose_v2": {
                     "project_src": "/opt/postgres",
-                    "restarted": True
+                    "state": "present",
+                    "recreate": "always"
                 }
             }
         ]
